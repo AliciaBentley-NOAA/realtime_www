@@ -1,0 +1,1 @@
+45 4,10,16,22 * * * nice /lb13/abentley/cron_scripts/makegifsrealtime.csh

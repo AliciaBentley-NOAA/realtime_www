@@ -1,0 +1,15 @@
+5 4 * * * nice /lb13/abentley/cron_scripts/untargrib_sutcliffe.csh 1> /dev/null 2>&1
+
+1 1,7,13,19 * * * nice /lb13/abentley/cron_scripts/download_sutcliffe.csh 1> /dev/null 2>&1
+
+20 7 * * * nice /lb13/abentley/cron_scripts/nonpolar_archive.csh 1> /dev/null 2>&1
+
+20 1 * * * nice /lb13/abentley/cron_scripts/polar_archive.csh 1> /dev/null 2>&1
+
+30 7 * * * nice /lb13/abentley/cron_scripts/drive_archive.csh 1> /dev/null 2>&1
+
+59 7 * * * nice /lb13/abentley/cron_scripts/drive_edit_archive_php.csh 1> /dev/null 2>&1
+
+37 4,10,16,22 * * * nice /lb13/abentley/cron_scripts/polar_forecast.csh 1> /dev/null 2>&1
+
+35 4,10,16,22 * * * nice /lb13/abentley/cron_scripts/nonpolar_forecast.csh 1> /dev/null 2>&1

@@ -1,0 +1,1241 @@
+; ===========================================
+; Plot composited PV on isentropic surfaces
+; ===========================================
+load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/gsn_code.ncl"
+load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/gsn_csm.ncl"
+load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/contributed.ncl"
+load "$NCARG_ROOT/lib/ncarg/nclscripts/contrib/ut_string.ncl"
+load "~/ncl/lib/tTick.ncl"
+load "~/ncl/lib/ut_string.ncl"
+load "~/ncl/lib/latlon.ncl"
+load "~/ncl/lib/shea_util.ncl"
+load "$NCARG_ROOT/lib/ncarg/nclscripts/wrf/WRFUserARW.ncl"
+load "$NCARG_ROOT/lib/ncarg/nclscripts/contrib/calendar_decode2.ncl"
+; ===========================================
+
+; source ~macritch/.cshrc
+; ncl -V = 6.1.2
+
+begin
+
+print(" ")
+print("**************")
+print(" START SCRIPT ")
+print("**************")
+
+delall = 0
+check_dne = 0
+timeUnits = "hours since 1800-01-01 00:00:00"
+
+datestr = systemfunc("date")
+print("datestr: "+datestr)
+
+quote = inttochar(34) 
+cyyyy = stringtoint(systemfunc("date "+quote+"+%Y"+quote))
+cmm = stringtoint(systemfunc("date "+quote+"+%m"+quote))
+cdd = stringtoint(systemfunc("date "+quote+"+%d"+quote))
+chh = stringtoint(systemfunc("date "+quote+"+%H"+quote))
+cdate = cd_inv_calendar(cyyyy,cmm,cdd,chh,00,00,timeUnits,0)
+
+bdate = cdate
+bdate = bdate - 7*24
+dateInformation = calendar_decode2(bdate,-5)
+syyyy = dateInformation(:,0)			;;; start date in yyyy mm dd hh
+smm = dateInformation(:,1)
+sdd = dateInformation(:,2)
+shh = dateInformation(:,3)
+
+ldate = cdate
+ldate = ldate - 24
+dateInformation = calendar_decode2(ldate,-5)
+eyyyy = dateInformation(:,0)			;;; start date in yyyy mm dd hh
+emm = dateInformation(:,1)
+edd = dateInformation(:,2)
+
+if shh .lt. 7 then
+     sdate = cd_inv_calendar(syyyy,smm,sdd,00,00,00,timeUnits,0) ;;; Convert string values to integers to use cd_inv_calendar function
+     edate = cd_inv_calendar(eyyyy,emm,edd,18,00,00,timeUnits,0)
+     hr = 00  ;;; choose forecast synoptic time (e.g. 00 will plot the forecast initialized at 00 UTC)
+else if shh .ge. 7 .and. shh .lt. 15 then
+     sdate = cd_inv_calendar(syyyy,smm,sdd,06,00,00,timeUnits,0)
+     edate = cd_inv_calendar(eyyyy,emm,edd,18,00,00,timeUnits,0)
+     hr = 06
+else if shh .ge. 15 .and. shh .lt. 19 then
+     sdate = cd_inv_calendar(syyyy,smm,sdd,12,00,00,timeUnits,0)
+     edate = cd_inv_calendar(eyyyy,emm,edd,18,00,00,timeUnits,0)
+     hr = 12
+else if shh .ge. 19 then
+     sdate = cd_inv_calendar(syyyy,smm,sdd,18,00,00,timeUnits,0)
+     edate = cd_inv_calendar(eyyyy,emm,edd,18,00,00,timeUnits,0)
+     hr = 18
+end if
+end if
+end if
+end if
+
+print("GFS Forecast: "+hr+"Z run")
+
+;;; end date in yyyy mm dd hh (note end of analysis must ALWAYS end at 18 UTC)
+;;; this is because grib files are packaged in .tar format which saves daily files
+;;; (00,06,12,18) bundeling all the synoptic times in one file. This program
+;;; bridges the gap if you are looking at a forecast other than starting at 00 UTC
+;;; by filling in the missing dates with the forecast analysis grib files 
+
+print("sdate: "+ut_string(sdate,""))
+print("edate: "+ut_string(edate,""))
+
+folder = (/"northamer","pacific","atlantic","europe"/)  
+enddomain = dimsizes(folder)
+
+do x = 0,enddomain-1
+
+domain = folder(x)
+
+print(" ")
+print("Plotting maps for: "+domain)
+
+fcast = "yes" 		        ;;; do you want to plot the 192 hour GFS forecast at the next synoptic time?	         	
+  
+fdate = edate + hr + 6
+    
+imgcount = 29			;;; this starts the image count at 1 (you can change this to any number you want
+  				        ;;; but note it counts up by 1 at a time as you move 6h forward in time
+
+name = "295K_isen"
+dir_grib = "/free2/abentley/realtime/"+name+"/grib/"		        
+dir_out = "/lb11/abentley/www/realtime/images/"+domain+"/"+name+"/"
+
+
+if x .gt. 0 then
+delete(fhr)
+delete(fhr_cur)
+delete(nfhr)
+end if
+
+;*****************************************************
+
+if(fcast.eq."yes") then
+  print("Will plot analysis first then forecast")
+
+  do tim = sdate,fdate,6
+         tim@units = "hours since 1800-01-01 00:00:00"   ;define units for t (which is the time in 6 hour intervals)
+    
+         if(tim.eq.sdate) then
+             print("Time = Start Date")
+         end if
+         
+         baddate = cd_inv_calendar(2015,6,4,0,00,00,timeUnits,0)
+         
+         if(tim.eq.baddate)then
+         	print("Got in here! It's gonna fail!")
+         	oldimg = imgcount + 1
+         	print("oldimg: "+oldimg)
+         	system("'cp' /lb11/abentley/www/realtime/images/"+domain+"/"+name+"/"+name+"_"+oldimg+".gif /lb11/abentley/www/realtime/images/"+domain+"/"+name+"/"+name+"_"+imgcount+".gif")
+			print("Image = "+imgcount+" created in: "+dir_out)
+			imgcount = imgcount + 1
+            tim = cd_inv_calendar(2015,6,4,6,00,00,timeUnits,0)
+            print("tim: "+ut_string(tim,""))
+         end if	
+         
+         baddate2 = cd_inv_calendar(2015,6,4,6,00,00,timeUnits,0)
+         
+         if(tim.eq.baddate2)then
+         	print("Got in here! It's gonna fail!")
+         	oldimg = imgcount + 1
+         	print("oldimg: "+oldimg)
+         	system("'cp' /lb11/abentley/www/realtime/images/"+domain+"/"+name+"/"+name+"_"+oldimg+".gif /lb11/abentley/www/realtime/images/"+domain+"/"+name+"/"+name+"_"+imgcount+".gif")
+			print("Image = "+imgcount+" created in: "+dir_out)
+			imgcount = imgcount + 1
+            tim = cd_inv_calendar(2015,6,4,12,00,00,timeUnits,0)
+            print("tim: "+ut_string(tim,""))
+         end if	
+  
+         needfile = cd_inv_calendar(2015,6,4,12,00,00,timeUnits,0)
+         
+         
+  
+         ; Let's make a few date strings
+         str_time = ut_string(tim,"%y%N%D")
+         str_hr = ut_string(tim,"%H")
+         
+  
+         ; Get the tar file and opens the grib files
+         if(tim .le. edate) then
+             if(str_hr .eq. "00") then
+  	             system("cp /nfs/nmc2/grib/gfs255_anl_"+str_time+".grb2.tar "+dir_grib)
+  	             system("tar -xvf "+dir_grib+"gfs255_anl_"+str_time+".grb2.tar -C "+dir_grib)
+  	         else if (tim .eq. needfile) then
+  	             system("cp /nfs/nmc2/grib/gfs255_anl_"+str_time+".grb2.tar "+dir_grib)
+  	             system("tar -xvf "+dir_grib+"gfs255_anl_"+str_time+".grb2.tar -C "+dir_grib)
+  	         end if 
+             end if
+  
+             ;;; new... to read in files that don't start at 00 UTC
+             if( (tim.eq.sdate) .and. (str_hr.ne."00")) then
+                system("cp /nfs/nmc2/grib/gfs255_anl_"+str_time+".grb2.tar "+dir_grib)
+  	            system("tar -xvf "+dir_grib+"gfs255_anl_"+str_time+".grb2.tar -C "+dir_grib)
+             end if  
+          end if
+      
+          ;now that the filename should be in the proper directory, go ahead and add it
+          ;check to make sure it exists too!
+  
+          if(tim .le. edate) then
+                filename = dir_grib+"GFS_"+str_time+"_"+str_hr+"_000.grb2"
+				if (isfilepresent(filename)) then
+				    if (imgcount .gt. 32) then
+				        system("rm -f "+dir_grib+"GFS_"+dne_time+"_"+dne_hr+"_000")			
+				    end if
+				else
+				  	filename = dir_grib+"GFS_"+dne_time+"_"+dne_hr+"_000.grb2"
+				  	print("File does not exist. Using last file that did...")
+				    print("filename: "+filename)
+				    check_dne = 1
+                end if
+                dne_time = ut_string(tim,"%y%N%D")
+			    dne_hr = ut_string(tim,"%H")
+          end if
+  
+          if(tim .eq. fdate) then
+             print("Plotting from forecast grib files")
+             ; HERE NEEDS A DELETE fhr????
+             delete(fhr)
+             fhr  = (/0,6,12,18,24,30,36,42,48,54,60,66,72,78,84,90,96,102,108,114,120,126,132,138,144,150,156,162,168,174,180,186,192/)
+             nfhr = dimsizes(fhr)
+          else
+             fhr = (/0/)
+             nfhr = dimsizes(fhr)
+          end if
+  
+          if(tim .gt. edate) then
+             do f = 0,nfhr-1
+                 if (fhr(f).lt.10) then
+                      filefhr = "00"+fhr(f)
+                 else if ((fhr(f).lt.100).and.(fhr(f).gt.10)) then
+                      filefhr = "0"+fhr(f)
+                 else if (fhr(f).gt.100) then
+                      filefhr = fhr(f)
+                 end if 
+                 end if
+                 end if
+                 filename = "/nfs/cas2/unidata/GRIB/gfs0p5deg/GFS_"+str_time+"_"+str_hr+"_"+filefhr+".grb2"
+                 fhr_cur = fhr(f)
+
+;**********************************************************************************************************
+;**********************************************************************************************************
+;**********************************************************************************************************
+      	delete(a)
+      	delete(t)
+      	delete(u)
+      	delete(v)
+      	delete(avrt)
+      	delete(lats)
+      	delete(lons)      	
+      	delete(lev)
+      	delete(nlat)
+      	delete(nlon)
+      	delete(nlev)
+      	delete(p)
+      	delete(theta)
+      	delete(th_lev)
+      	delete(nth_lev)
+      	delete(levs_todo)
+      	delete(nlevs_todo)
+      	delete(p_th)
+		delete(u_th)
+		delete(v_th)
+		delete(avrt_th)
+		delete(sf_th)
+		delete(pu_isen)
+		delete(pb_isen)
+		delete(avrt_isen)
+		delete(urel)
+		delete(vrel)
+		delete(avgu)
+		delete(avgv)
+		delete(relvort)
+		delete(pv_isen)
+		delete(pv_isen_all)
+		delete(g)
+
+ a = addfile(filename,"r")
+
+  isen_lev = (/295/)
+  
+  do il = 0,dimsizes(isen_lev)-1
+
+  ;;;;;; read in the proper variables to make isentropic PV analysis 
+  
+  t = a->TMP_P0_L100_GLL0({100000:10000},:,:)
+  u = a->UGRD_P0_L100_GLL0({100000:10000},:,:)
+  v = a->VGRD_P0_L100_GLL0({100000:10000},:,:)
+  avrt = a->ABSV_P0_L100_GLL0({100000:10000},:,:)
+  
+  lats = a->lat_0    
+  lons = a->lon_0
+  lev = a->lv_ISBL0({100000:10000})
+
+  nlat = dimsizes(lats)
+  nlon = dimsizes(lons)
+  nlev = dimsizes(lev)
+  
+  p = t
+  do l=0,nlev-1
+    p(l,:,:) = lev(l)*0.01
+  end do
+  p@units = "hPa"
+
+  ;#### Make potential temp. (all levs)
+  theta = t
+  theta = t*((1000./p)^(287./1004.))
+  
+;print("Creating Isentropic PV")
+
+;####################################################
+;#### Create Full Resolution Isentropic vars ########
+
+  th_lev = (/isen_lev(il)-1,isen_lev(il),isen_lev(il)+1/) ;#### Only calculate desired levels!!
+  nth_lev = dimsizes(th_lev)
+  
+  levs_todo = (/isen_lev(il)/)
+  nlevs_todo = dimsizes(levs_todo)
+
+  p_th = new((/nth_lev,nlat,nlon/),"float")
+  u_th = p_th
+  v_th = p_th
+  avrt_th = p_th
+  sf_th = p_th
+
+  do j=0,nth_lev-1,1
+    u_th(j,:,:)  = (/wrf_user_intrp3d(u(:,:,:),theta(:,:,:),"h",th_lev(j),0.,False)/)
+    v_th(j,:,:)  = (/wrf_user_intrp3d(v(:,:,:),theta(:,:,:),"h",th_lev(j),0.,False)/)
+    p_th(j,:,:)  = (/wrf_user_intrp3d(p(:,:,:),theta(:,:,:),"h",th_lev(j),0.,False)/)
+    avrt_th(j,:,:)  = (/wrf_user_intrp3d(avrt(:,:,:),theta(:,:,:),"h",th_lev(j),0.,False)/)
+  end do
+
+  p_th!0 = "lev"
+  p_th!1 = "lat"
+  p_th!2 = "lon"
+    
+  p_th = p_th
+
+  p_th&lev = th_lev
+  p_th&lat = lats
+  p_th&lon = lons
+  p_th@_FillValue = -99999.
+
+  copy_VarMeta(p_th,u_th)
+  copy_VarMeta(p_th,v_th)
+  copy_VarMeta(p_th,avrt_th)
+  
+  u_th@_FillValue = 9.96921e+36
+  v_th@_FillValue = 9.96921e+36
+  
+  u_th = u_th*1.94384449
+  v_th = v_th*1.94384449
+  
+;####################################################
+;#### Calculate Full Res. Isentropic PV. ############
+
+  pu_isen = p_th({isen_lev(il)},:,:)
+  pb_isen = p_th({isen_lev(il)},:,:)
+  avrt_isen = avrt_th({isen_lev(il)},:,:)
+
+  pv_isen_all = new((/1,nlat,nlon/),"float")
+
+  do i=0,nlevs_todo-1
+    pu_isen = p_th({levs_todo(i)+1},:,:)*100.
+    pb_isen = p_th({levs_todo(i)-1},:,:)*100.
+    avrt_isen = avrt_th({levs_todo(i)},:,:)
+    pv_isen = avrt_isen*9.8*(2.)*(1./(pb_isen-pu_isen))*10.^6.
+    pv_isen_all(i,:,:) = (/pv_isen/)
+  end do
+
+  pv_isen_all!0 = "lev"
+  pv_isen_all!1 = "lat"
+  pv_isen_all!2 = "lon"
+
+  pv_isen_all&lev = levs_todo
+  pv_isen_all&lat = lats
+  pv_isen_all&lon = lons
+
+;***********Rel. Vort.**************
+
+  urel = a->UGRD_P0_L100_GLL0({92500:85000},::-1,:)
+  vrel = a->VGRD_P0_L100_GLL0({92500:85000},::-1,:)
+
+  avgu = dim_avg_n_Wrap(urel,0)
+  avgv = dim_avg_n_Wrap(vrel,0) 
+
+  relvort = uv2vrF_Wrap(avgu,avgv)
+
+  do d=0,10
+     g=smth9(p_th,.5,.25,True)
+  end do
+
+  print("Successfully got data from files!")
+
+;==============================================
+; Create Shaded Map
+;==============================================
+
+wks_type = "png"
+
+wks_type@wkWidth = 1600
+wks_type@wkHeight = 1600
+
+wks = gsn_open_wks(wks_type,"/free2/abentley/realtime/"+name+"/"+name+"_"+imgcount)
+gsn_define_colormap(wks,"mthesispv")
+;**********************************************
+
+res = True
+
+res@gsnFrame = False                                             ;DO NOT PLOT FIRST MAP
+res@gsnDraw = False
+
+res@mpDataBaseVersion = "MediumRes"                              ; Country Outlines
+res@mpDataSetName = "Earth..4"
+res@mpOutlineBoundarySets = "National"
+
+res@cnFillOn = True                                              ; Turn on color fill
+;res@cnFillMode = "RasterFill"
+res@cnFillMode = "AreaFill"
+res@cnRasterSmoothingOn = True
+res@cnLevelSelectionMode = "ExplicitLevels"
+res@cnLinesOn = False                               ; Turn off contour lines
+res@cnLevelSpacingF = 1                            ; Shading interval
+;res@cnLevels = (/0,.2,.4,.6,1,1.5,2,3,4,5,6,7,8,9,10/)
+;res@cnFillColors = (/26,27,7,9,10,11,12,13,14,16,18,19,20,22,23,31/)
+res@cnLevels = (/0,.5,1,1.5,2,3,4,5,6,8,10/)
+res@cnFillColors = (/10,11,12,13,14,16,18,19,20,22,23,31/)
+
+;**********************************************
+
+res@lbAutoManage = False                   ; Label Bar Information
+res@pmLabelBarOrthogonalPosF = .02  
+res@pmLabelBarHeightF = 0.08
+res@pmLabelBarWidthF = 0.73
+res@lbLabelAutoStride = True
+res@lbLabelFontHeightF = 0.0124
+res@lbBoxLinesOn  = True                   ; Outline the color bar 
+res@lbTopMarginF = .3
+
+;**********************************************
+
+res@tiMainString = " "
+res@tiMainJust = "CenterCenter"
+res@tiMainPosition = "Center" 
+res@tiMainOffsetYF = .02
+res@tiXAxisFontHeightF = .015
+
+res@gsnLeftString = "PV, pressure, and wind (295 K isen. sfc.)"
+res@gsnLeftStringOrthogonalPosF = .012
+res@gsnLeftStringFontHeightF = .008
+res@gsnRightStringOrthogonalPosF = .0075
+res@gsnRightStringFontHeightF = .013
+
+  curdate = tim + fhr_cur
+  curdate@units = "hours since 1800-01-01 00:00:00"
+
+  if (fhr_cur .gt. 0) then
+     res@gsnRightString = "("+fhr_cur+" h fcst) "+ut_string(curdate,"")
+     res@gsnLeftStringFontColor = "red"
+     res@gsnRightStringFontColor = "red"
+  else
+     res@gsnRightString = "(Analysis) "+ut_string(curdate,"")
+     res@gsnLeftStringFontColor = "black"
+     res@gsnRightStringFontColor = "black"
+  end if
+
+; *********************************************
+
+res@mpGeophysicalLineThicknessF = 6.0
+res@mpNationalLineThicknessF = 6.0
+res@mpUSStateLineThicknessF = 6.0
+res@mpOutlineSpecifiers = (/"United States"/)+" : States"
+
+res@mpGeophysicalLineColor = "grey20"
+res@mpNationalLineColor = "grey20"
+res@mpUSStateLineColor = "grey20"
+
+; *********************************************
+
+res@mpGridAndLimbOn = True
+res@mpGridLineDashPattern = 5
+res@mpGridLatSpacingF = 20.
+res@mpGridLonSpacingF = 20.
+res@mpGridLineThicknessF = 3
+res@mpGridLineColor = "grey29"
+res@pmTickMarkDisplayMode = "Always"
+
+tmres = True
+tmres@tmYLValues = ispan(-80,80,20)
+tmres@tmYRValues = ispan(-80,80,20)
+tmres@tmXBValues = ispan(-180,179,40)
+tmres@tmXBLabelFontHeightF = .013
+tmres@tmYLLabelFontHeightF = .013
+tmres@tmYLLabelFontHeightF = .013
+
+tmres@tmXBMajorLengthF = .01
+tmres@tmXBMinorLengthF = .006
+
+tmres@tmYRMinorValues = (/5,10,15,25,30,35,45,50,55,65/)
+tmres@tmYLMinorValues = (/5,10,15,25,30,35,45,50,55,65/)
+tmres@tmXBMinorValues = (/-175,-170,-165,-160,-155,-150,-145,-135,-130,-125,-120,-115,-110,-105,-95,-90,-85,-80,-75,-70,-65,-55,-50,-45,-35,-30,-25,-15,-10,-5,5,10,15,25,30,35,40,45,50,55,60,65,70,75,80,85,90,95,100,105,110,115,120,125,130,135,145,150,155,160,165,170,175/)
+; *************************************************************
+
+
+if domain .eq. "northamer"
+res@mpProjection = "LambertConformal"
+res@mpLambertParallel2F = 31
+res@mpLambertParallel1F = 11
+res@mpLambertMeridianF = -100
+res@mpLimitMode = "LatLon"
+res@mpMinLatF = 8
+res@mpMaxLatF = 69
+res@mpMinLonF = -151
+res@mpMaxLonF = -49
+end if
+
+
+if domain .eq. "pacific"
+res@mpProjection = "LambertConformal"
+  westlon = 118.
+  eastlon = -118.
+  centerlon = 180. ; to use this effectively remember its the the distance of lon between west and east divided by 2
+  if(westlon.gt.eastlon)then
+    useflip = True
+    westlon = westlon
+    eastlon = eastlon+360.
+    if (centerlon.lt.0)then
+      centerlon = centerlon+360.
+    end if
+  end if
+res@mpLambertParallel2F = 28
+res@mpLambertParallel1F = 7
+delete(res@mpLambertMeridianF)
+delete(res@mpMinLonF)
+delete(res@mpMaxLonF)
+res@mpLambertMeridianF = centerlon
+res@mpLimitMode = "LatLon"
+res@mpMinLatF = -15
+res@mpMaxLatF = 71
+res@mpMinLonF = westlon
+res@mpMaxLonF = eastlon
+end if
+
+
+
+if domain .eq. "atlantic"
+res@mpProjection = "LambertConformal"
+res@mpLambertParallel2F = 31
+res@mpLambertParallel1F = 11
+delete(res@mpLambertMeridianF)
+delete(res@mpMinLonF)
+delete(res@mpMaxLonF)
+res@mpLambertMeridianF = -20
+res@mpLimitMode = "LatLon"
+res@mpMinLatF = 6
+res@mpMaxLatF = 71
+res@mpMinLonF = -90
+res@mpMaxLonF = 30
+end if
+
+
+if domain .eq. "europe"
+res@mpProjection = "LambertConformal"
+res@mpLambertParallel2F = 20
+res@mpLambertParallel1F = 11
+delete(res@mpLambertMeridianF)
+delete(res@mpMinLonF)
+delete(res@mpMaxLonF)
+res@mpLambertMeridianF = 0
+res@mpLimitMode = "LatLon"
+res@mpMinLatF = 25
+res@mpMaxLatF = 72
+res@mpMinLonF = -46
+res@mpMaxLonF = 46
+end if
+
+; *************************************************************
+
+cnres = True
+
+cnres@gsnFrame = False                                        
+cnres@gsnDraw = False
+
+cnres@gsnLeftString = " "
+cnres@gsnRightString = " "
+
+cnres@cnFillMode = "AreaFill"
+cnres@cnInfoLabelOn = False                    ; Removes descriptive box in lower right corner
+cnres@cnFillOn = False
+cnres@cnLinesOn = True
+cnres@cnLabelMasking = True
+cnres@cnLineThicknessF = 4                    ; Changes thickness of contours
+cnres@cnLevelSelectionMode = "ManualLevels"
+cnres@cnLevelSpacingF = 30
+cnres@cnMinLevelValF = 300
+cnres@cnMaxLevelValF = 1200   
+cnres@cnLineLabelAngleF = 0.0
+cnres@cnLineLabelInterval = 2
+cnres@cnLineLabelDensityF = .93
+cnres@cnLineLabelBackgroundColor = -1
+cnres@cnLineLabelFontHeightF = 0.008
+cnres@gsnAddCyclic =  True
+
+; *************************************************************
+
+relres = True
+
+relres@gsnFrame = False                                        
+relres@gsnDraw = False
+
+relres@cnFillMode = "AreaFill"
+relres@gsnLeftString = " "
+relres@gsnRightString = " "
+relres@cnInfoLabelOn = False                    ; Removes descriptive box in lower right corner
+relres@cnFillOn = False
+relres@cnLinesOn = True
+relres@cnLabelMasking = True
+relres@cnLineThicknessF = 4
+relres@cnLineColor = "black"
+;relres@cnLineColor = "navy"
+relres@cnLevelSelectionMode = "ManualLevels"
+relres@cnLevelSpacingF = .5*10^-4
+relres@cnMinLevelValF = .5*10^-4
+relres@cnMaxLevelValF = 10*10^-4
+relres@cnLineLabelsOn = False
+relres@cnLineLabelAngleF = 0.0
+relres@cnLineLabelInterval = 1
+relres@cnLineLabelDensityF = .77
+relres@cnLineLabelBackgroundColor = -1
+relres@cnLineLabelFontHeightF = 0.018
+relres@gsnAddCyclic =  True
+
+; *************************************************************
+
+
+    bres = True
+
+    bres@gsnFrame = False                                        
+    bres@gsnDraw = False
+
+    bres@gsnLeftString = " "
+    bres@gsnRightString = " "
+
+    bres@vcGlyphStyle = "WindBarb"
+    bres@vcWindBarbColor = "grey29"
+    bres@vcWindBarbCalmCircleSizeF = 0
+    bres@vcWindBarbLineThicknessF = 3.0
+    bres@vcRefAnnoOn = False
+    bres@vcRefLengthF = 0.0242
+    bres@vcRefMagnitudeF = 10.0
+    bres@vcRefAnnoString2On = False
+    bres@vcRefAnnoOrthogonalPosF = -1.08
+    bres@vcMinDistanceF = 0.025
+    bres@vcWindBarbTickLengthF = 0.37
+    bres@vcWindBarbTickSpacingF = 0.130
+    bres@vcWindBarbTickAngleF = 55.0
+    bres@gsnFrame = False
+    bres@gsnAddCyclic =  True
+
+
+; *************************************************************
+res@mpGridAndLimbDrawOrder = "PostDraw"
+res@cnFillDrawOrder = "PreDraw"
+relres@cnLineDrawOrder ="Draw" 
+bres@vcVectorDrawOrder = "Draw"
+res@mpOutlineDrawOrder = "Draw"
+res@mpFillOn = False
+res@mpOutlineOn = True
+
+plot = gsn_csm_contour_map(wks, pv_isen_all({isen_lev(il)},:,:), res)          ; Plot filled contour map
+contours = gsn_csm_contour(wks, p_th({isen_lev(il)},:,:), cnres)
+other = gsn_csm_contour(wks, relvort, relres)
+barbs = gsn_csm_vector(wks, u_th({isen_lev(il)},:,:), v_th({isen_lev(il)},:,:), bres)
+plot = add_map_tickmarks(wks,plot,tmres)
+;==============================================
+; Set Marker and Text Resources
+;==============================================
+
+tres = True
+tres@txFontHeightF = 0.018
+tres@txJust = "CenterLeft"
+tres@gsLineDashPattern = 5
+;tres@txFontThicknessF = 10
+tres@gsLineThicknessF = 3
+tres@gsLineColor = "grey29"
+
+if domain .eq. "northamer" then
+    tres@txJust = "CenterLeft"
+    tres@txFontHeightF = 0.01
+    mytext = gsn_add_text(wks,contours,"Alicia M. Bentley",-148.5,3.5,tres)
+    mytext2 = gsn_add_text(wks,contours,"www.AliciaMBentley.com",-148,2,tres)
+else if domain .eq. "pacific" then
+    tres@txJust = "CenterLeft"
+    tres@txFontHeightF = 0.011
+    mytext = gsn_add_text(wks,contours,"Alicia M. Bentley",117.7,-6.7,tres)
+    mytext2 = gsn_add_text(wks,contours,"www.AliciaMBentley.com",118.4,-8.8,tres)
+else if domain .eq. "atlantic" then
+    tres@txJust = "CenterLeft"
+    tres@txFontHeightF = 0.011
+    mytext = gsn_add_text(wks,contours,"Alicia M. Bentley",-85.0,-4,tres)
+    mytext2 = gsn_add_text(wks,contours,"www.AliciaMBentley.com",-84,-6,tres)
+else if domain .eq. "europe" then
+    tres@txJust = "CenterLeft"
+    tres@txFontHeightF = 0.011
+    mytext = gsn_add_text(wks,contours,"Alicia M. Bentley",-45.0,23.2,tres)
+    mytext2 = gsn_add_text(wks,contours,"www.AliciaMBentley.com",-44.7,21.7,tres)
+end if
+end if
+end if
+end if 
+
+;********************************************
+
+overlay(plot,contours)
+;overlay(plot,other)
+overlay(plot,barbs)
+
+;********************************************
+
+draw(plot)
+frame(wks)
+
+system("convert /free2/abentley/realtime/"+name+"/"+name+"_"+imgcount+".png -trim +repage "+dir_out+name+"_"+imgcount+".gif")
+system ("'rm' /free2/abentley/realtime/"+name+"/"+name+"_*.png") 
+
+print("Image = "+imgcount+" created in: "+dir_out)
+
+;**********************************************************************************************************
+;**********************************************************************************************************
+;**********************************************************************************************************
+
+                 imgcount = imgcount + 1
+             end do
+             end do
+
+          else
+             if(tim .eq. sdate) then
+                 print("Plotting from archived grib files")
+             end if
+
+;**********************************************************************************************************
+;**********************************************************************************************************
+;**********************************************************************************************************
+   if delall .eq. 1 then
+      	delete(a)
+      	delete(t)
+      	delete(u)
+      	delete(v)
+      	delete(avrt)
+      	delete(lats)
+      	delete(lons)      	
+      	delete(lev)
+      	delete(nlat)
+      	delete(nlon)
+      	delete(nlev)
+      	delete(p)
+      	delete(theta)
+      	delete(th_lev)
+      	delete(nth_lev)
+      	delete(levs_todo)
+      	delete(nlevs_todo)
+      	delete(p_th)
+		delete(u_th)
+		delete(v_th)
+		delete(avrt_th)
+		delete(sf_th)
+		delete(pu_isen)
+		delete(pb_isen)
+		delete(avrt_isen)
+		delete(urel)
+		delete(vrel)
+		delete(avgu)
+		delete(avgv)
+		delete(relvort)
+		delete(pv_isen)
+		delete(pv_isen_all)
+		delete(g)
+  end if
+ 
+ delall = 1
+ a = addfile(filename,"r")
+
+  isen_lev = (/295/)
+  
+  do il = 0,dimsizes(isen_lev)-1
+
+  ;;;;;; read in the proper variables to make isentropic PV analysis 
+  
+  t = a->TMP_P0_L100_GLL0({100000:10000},:,:)
+  u = a->UGRD_P0_L100_GLL0({100000:10000},:,:)
+  v = a->VGRD_P0_L100_GLL0({100000:10000},:,:)
+  avrt = a->ABSV_P0_L100_GLL0({100000:10000},:,:)
+  
+  lats = a->lat_0    
+  lons = a->lon_0
+  lev = a->lv_ISBL0({100000:10000})
+
+  nlat = dimsizes(lats)
+  nlon = dimsizes(lons)
+  nlev = dimsizes(lev)
+  
+  p = t
+  do l=0,nlev-1
+    p(l,:,:) = lev(l)*0.01
+  end do
+  p@units = "hPa"
+
+  ;#### Make potential temp. (all levs)
+  theta = t
+  theta = t*((1000./p)^(287./1004.))
+  
+;print("Creating Isentropic PV")
+
+;####################################################
+;#### Create Full Resolution Isentropic vars ########
+
+  th_lev = (/isen_lev(il)-1,isen_lev(il),isen_lev(il)+1/) ;#### Only calculate desired levels!!
+  nth_lev = dimsizes(th_lev)
+  
+  levs_todo = (/isen_lev(il)/)
+  nlevs_todo = dimsizes(levs_todo)
+
+  p_th = new((/nth_lev,nlat,nlon/),"float")
+  u_th = p_th
+  v_th = p_th
+  avrt_th = p_th
+  sf_th = p_th
+
+  do j=0,nth_lev-1,1
+    u_th(j,:,:)  = (/wrf_user_intrp3d(u(:,:,:),theta(:,:,:),"h",th_lev(j),0.,False)/)
+    v_th(j,:,:)  = (/wrf_user_intrp3d(v(:,:,:),theta(:,:,:),"h",th_lev(j),0.,False)/)
+    p_th(j,:,:)  = (/wrf_user_intrp3d(p(:,:,:),theta(:,:,:),"h",th_lev(j),0.,False)/)
+    avrt_th(j,:,:)  = (/wrf_user_intrp3d(avrt(:,:,:),theta(:,:,:),"h",th_lev(j),0.,False)/)
+  end do
+
+  p_th!0 = "lev"
+  p_th!1 = "lat"
+  p_th!2 = "lon"
+    
+  p_th = p_th
+
+  p_th&lev = th_lev
+  p_th&lat = lats
+  p_th&lon = lons
+  p_th@_FillValue = -99999.
+
+  copy_VarMeta(p_th,u_th)
+  copy_VarMeta(p_th,v_th)
+  copy_VarMeta(p_th,avrt_th)
+  
+  u_th@_FillValue = 9.96921e+36
+  v_th@_FillValue = 9.96921e+36
+
+  u_th = u_th*1.94384449
+  v_th = v_th*1.94384449
+
+  
+;####################################################
+;#### Calculate Full Res. Isentropic PV. ############
+
+  pu_isen = p_th({isen_lev(il)},:,:)
+  pb_isen = p_th({isen_lev(il)},:,:)
+  avrt_isen = avrt_th({isen_lev(il)},:,:)
+
+  pv_isen_all = new((/1,nlat,nlon/),"float")
+
+  do i=0,nlevs_todo-1
+    pu_isen = p_th({levs_todo(i)+1},:,:)*100.
+    pb_isen = p_th({levs_todo(i)-1},:,:)*100.
+    avrt_isen = avrt_th({levs_todo(i)},:,:)
+    pv_isen = avrt_isen*9.8*(2.)*(1./(pb_isen-pu_isen))*10.^6.
+    pv_isen_all(i,:,:) = (/pv_isen/)
+  end do
+
+  pv_isen_all!0 = "lev"
+  pv_isen_all!1 = "lat"
+  pv_isen_all!2 = "lon"
+
+  pv_isen_all&lev = levs_todo
+  pv_isen_all&lat = lats
+  pv_isen_all&lon = lons
+
+;***********Rel. Vort.**************
+
+  urel = a->UGRD_P0_L100_GLL0({92500:85000},::-1,:)
+  vrel = a->VGRD_P0_L100_GLL0({92500:85000},::-1,:)
+
+  avgu = dim_avg_n_Wrap(urel,0)
+  avgv = dim_avg_n_Wrap(vrel,0) 
+
+  relvort = uv2vrF_Wrap(avgu,avgv)
+
+  do d=0,10
+     g=smth9(p_th,.5,.25,True)
+  end do
+
+  print("Successfully got data from files!")
+
+;==============================================
+; Create Shaded Map
+;==============================================
+
+wks_type = "png"
+
+wks_type@wkWidth = 1600
+wks_type@wkHeight = 1600
+
+wks = gsn_open_wks(wks_type,"/free2/abentley/realtime/"+name+"/"+name+"_"+imgcount)
+gsn_define_colormap(wks,"mthesispv")
+;**********************************************
+
+res = True
+
+res@gsnFrame = False                                             ;DO NOT PLOT FIRST MAP
+res@gsnDraw = False
+
+res@mpDataBaseVersion = "MediumRes"                              ; Country Outlines
+res@mpDataSetName = "Earth..4"
+res@mpOutlineBoundarySets = "National"
+
+res@cnFillOn = True                                              ; Turn on color fill
+;res@cnFillMode = "RasterFill"
+res@cnFillMode = "AreaFill"
+res@cnRasterSmoothingOn = True
+res@cnLevelSelectionMode = "ExplicitLevels"
+res@cnLinesOn = False                               ; Turn off contour lines
+res@cnLevelSpacingF = 1                            ; Shading interval
+;;;;;;res@cnLevels = (/0,.2,.4,.6,1,1.5,2,3,4,5,6,7,8,9,10/)
+;;;;;;;res@cnFillColors = (/26,27,7,9,10,11,12,13,14,16,18,19,20,22,23,31/)
+res@cnLevels = (/0,.5,1,1.5,2,3,4,5,6,8,10/)
+res@cnFillColors = (/10,11,12,13,14,16,18,19,20,22,23,31/)
+
+
+;**********************************************
+
+res@lbAutoManage = False                   ; Label Bar Information
+res@pmLabelBarOrthogonalPosF = .02  
+res@pmLabelBarHeightF = 0.08
+res@pmLabelBarWidthF = 0.73
+res@lbLabelAutoStride = True
+res@lbLabelFontHeightF = 0.0124
+res@lbBoxLinesOn  = True                   ; Outline the color bar 
+res@lbTopMarginF = .3
+
+;**********************************************
+
+res@tiMainString = " "
+res@tiMainJust = "CenterCenter"
+res@tiMainPosition = "Center" 
+res@tiMainOffsetYF = .02
+res@tiXAxisFontHeightF = .015
+
+;res@gsnLeftString = "PV, pres., and wind (295 K isen. sfc.); 925~F15~-~F21~850-hPa rel. vort."
+res@gsnLeftString = "PV, pressure, and wind (295 K isen. sfc.)"
+res@gsnLeftStringOrthogonalPosF = .012
+res@gsnLeftStringFontHeightF = .008
+res@gsnRightStringOrthogonalPosF = .0075
+res@gsnRightStringFontHeightF = .013
+
+res@gsnRightString = "(Analysis) "+ut_string(tim,"")
+res@gsnLeftStringFontColor = "black"
+res@gsnRightStringFontColor = "black"
+
+
+; *********************************************
+
+res@mpGeophysicalLineThicknessF = 6.0
+res@mpNationalLineThicknessF = 6.0
+res@mpUSStateLineThicknessF = 6.0
+res@mpOutlineSpecifiers = (/"United States"/)+" : States"
+
+res@mpGeophysicalLineColor = "grey20"
+res@mpNationalLineColor = "grey20"
+res@mpUSStateLineColor = "grey20"
+
+; *********************************************
+
+res@mpGridAndLimbOn = True
+res@mpGridLineDashPattern = 5
+res@mpGridLatSpacingF = 20.
+res@mpGridLonSpacingF = 20.
+res@mpGridLineThicknessF = 3
+res@mpGridLineColor = "grey29"
+res@pmTickMarkDisplayMode = "Always"
+
+tmres = True
+tmres@tmYLValues = ispan(-80,80,20)
+tmres@tmYRValues = ispan(-80,80,20)
+tmres@tmXBValues = ispan(-180,179,40)
+tmres@tmXBLabelFontHeightF = .013
+tmres@tmYLLabelFontHeightF = .013
+tmres@tmYLLabelFontHeightF = .013
+
+tmres@tmXBMajorLengthF = .01
+tmres@tmXBMinorLengthF = .006
+
+tmres@tmYRMinorValues = (/5,10,15,25,30,35,45,50,55,65/)
+tmres@tmYLMinorValues = (/5,10,15,25,30,35,45,50,55,65/)
+tmres@tmXBMinorValues = (/-175,-170,-165,-160,-155,-150,-145,-135,-130,-125,-120,-115,-110,-105,-95,-90,-85,-80,-75,-70,-65,-55,-50,-45,-35,-30,-25,-15,-10,-5,5,10,15,25,30,35,40,45,50,55,60,65,70,75,80,85,90,95,100,105,110,115,120,125,130,135,145,150,155,160,165,170,175/)
+; *************************************************************
+
+
+if domain .eq. "northamer"
+res@mpProjection = "LambertConformal"
+res@mpLambertParallel2F = 31
+res@mpLambertParallel1F = 11
+res@mpLambertMeridianF = -100
+res@mpLimitMode = "LatLon"
+res@mpMinLatF = 8
+res@mpMaxLatF = 69
+res@mpMinLonF = -151
+res@mpMaxLonF = -49
+end if
+
+
+if domain .eq. "pacific"
+res@mpProjection = "LambertConformal"
+  westlon = 118.
+  eastlon = -118.
+  centerlon = 180. ; to use this effectively remember its the the distance of lon between west and east divided by 2
+  if(westlon.gt.eastlon)then
+    useflip = True
+    westlon = westlon
+    eastlon = eastlon+360.
+    if (centerlon.lt.0)then
+      centerlon = centerlon+360.
+    end if
+  end if
+res@mpLambertParallel2F = 28
+res@mpLambertParallel1F = 7
+delete(res@mpLambertMeridianF)
+delete(res@mpMinLonF)
+delete(res@mpMaxLonF)
+res@mpLambertMeridianF = centerlon
+res@mpLimitMode = "LatLon"
+res@mpMinLatF = -15
+res@mpMaxLatF = 71
+res@mpMinLonF = westlon
+res@mpMaxLonF = eastlon
+end if
+
+
+
+if domain .eq. "atlantic"
+res@mpProjection = "LambertConformal"
+res@mpLambertParallel2F = 31
+res@mpLambertParallel1F = 11
+delete(res@mpLambertMeridianF)
+delete(res@mpMinLonF)
+delete(res@mpMaxLonF)
+res@mpLambertMeridianF = -20
+res@mpLimitMode = "LatLon"
+res@mpMinLatF = 6
+res@mpMaxLatF = 71
+res@mpMinLonF = -90
+res@mpMaxLonF = 30
+end if
+
+
+if domain .eq. "europe"
+res@mpProjection = "LambertConformal"
+res@mpLambertParallel2F = 20
+res@mpLambertParallel1F = 11
+delete(res@mpLambertMeridianF)
+delete(res@mpMinLonF)
+delete(res@mpMaxLonF)
+res@mpLambertMeridianF = 0
+res@mpLimitMode = "LatLon"
+res@mpMinLatF = 25
+res@mpMaxLatF = 72
+res@mpMinLonF = -46
+res@mpMaxLonF = 46
+end if
+
+; *************************************************************
+
+cnres = True
+
+cnres@gsnFrame = False                                        
+cnres@gsnDraw = False
+
+cnres@gsnLeftString = " "
+cnres@gsnRightString = " "
+
+cnres@cnFillMode = "AreaFill"
+cnres@cnInfoLabelOn = False                    ; Removes descriptive box in lower right corner
+cnres@cnFillOn = False
+cnres@cnLinesOn = True
+cnres@cnLabelMasking = True
+cnres@cnLineThicknessF = 4                    ; Changes thickness of contours
+cnres@cnLevelSelectionMode = "ManualLevels"
+cnres@cnLevelSpacingF = 30
+cnres@cnMinLevelValF = 300
+cnres@cnMaxLevelValF = 1200  
+cnres@cnLineLabelAngleF = 0.0
+cnres@cnLineLabelInterval = 2
+cnres@cnLineLabelDensityF = .93
+cnres@cnLineLabelBackgroundColor = -1
+cnres@cnLineLabelFontHeightF = 0.008
+cnres@gsnAddCyclic =  True
+
+; *************************************************************
+
+relres = True
+
+relres@gsnFrame = False                                        
+relres@gsnDraw = False
+
+relres@cnFillMode = "AreaFill"
+relres@gsnLeftString = " "
+relres@gsnRightString = " "
+relres@cnInfoLabelOn = False                    ; Removes descriptive box in lower right corner
+relres@cnFillOn = False
+relres@cnLinesOn = True
+relres@cnLabelMasking = True
+relres@cnLineThicknessF = 4
+relres@cnLineColor = "black"
+;relres@cnLineColor = "navy"
+relres@cnLevelSelectionMode = "ManualLevels"
+relres@cnLevelSpacingF = .5*10^-4
+relres@cnMinLevelValF = .5*10^-4
+relres@cnMaxLevelValF = 10*10^-4
+relres@cnLineLabelsOn = False
+relres@cnLineLabelAngleF = 0.0
+relres@cnLineLabelInterval = 1
+relres@cnLineLabelDensityF = .77
+relres@cnLineLabelBackgroundColor = -1
+relres@cnLineLabelFontHeightF = 0.018
+relres@gsnAddCyclic =  True
+
+; *************************************************************
+
+
+    bres = True
+
+    bres@gsnFrame = False                                        
+    bres@gsnDraw = False
+
+    bres@gsnLeftString = " "
+    bres@gsnRightString = " "
+
+    bres@vcGlyphStyle = "WindBarb"
+    bres@vcWindBarbColor = "grey29"
+    bres@vcWindBarbCalmCircleSizeF = 0
+    bres@vcWindBarbLineThicknessF = 3.0
+    bres@vcRefAnnoOn = False
+    bres@vcRefLengthF = 0.0242
+    bres@vcRefMagnitudeF = 10.0
+    bres@vcRefAnnoString2On = False
+    bres@vcRefAnnoOrthogonalPosF = -1.08
+    bres@vcMinDistanceF = 0.025
+    bres@vcWindBarbTickLengthF = 0.37
+    bres@vcWindBarbTickSpacingF = 0.130
+    bres@vcWindBarbTickAngleF = 55.0
+    bres@gsnFrame = False
+    bres@gsnAddCyclic =  True
+
+
+; *************************************************************
+res@mpGridAndLimbDrawOrder = "PostDraw"
+res@cnFillDrawOrder = "PreDraw"
+relres@cnLineDrawOrder ="Draw" 
+bres@vcVectorDrawOrder = "Draw"
+res@mpOutlineDrawOrder = "Draw"
+res@mpFillOn = False
+res@mpOutlineOn = True
+
+plot = gsn_csm_contour_map(wks, pv_isen_all({isen_lev(il)},:,:), res)          ; Plot filled contour map
+contours = gsn_csm_contour(wks, p_th({isen_lev(il)},:,:), cnres)
+other = gsn_csm_contour(wks, relvort, relres)
+barbs = gsn_csm_vector(wks, u_th({isen_lev(il)},:,:), v_th({isen_lev(il)},:,:), bres)
+plot = add_map_tickmarks(wks,plot,tmres)
+
+
+;==============================================
+; Set Marker and Text Resources
+;==============================================
+
+tres = True
+tres@txFontHeightF = 0.018
+tres@txJust = "CenterLeft"
+tres@gsLineDashPattern = 5
+;tres@txFontThicknessF = 10
+tres@gsLineThicknessF = 3
+tres@gsLineColor = "grey29"
+
+if domain .eq. "northamer" then
+    tres@txJust = "CenterLeft"
+    tres@txFontHeightF = 0.01
+    mytext = gsn_add_text(wks,contours,"Alicia M. Bentley",-148.5,3.5,tres)
+    mytext2 = gsn_add_text(wks,contours,"www.AliciaMBentley.com",-148,2,tres)
+else if domain .eq. "pacific" then
+    tres@txJust = "CenterLeft"
+    tres@txFontHeightF = 0.011
+    mytext = gsn_add_text(wks,contours,"Alicia M. Bentley",117.7,-6.7,tres)
+    mytext2 = gsn_add_text(wks,contours,"www.AliciaMBentley.com",118.4,-8.8,tres)
+else if domain .eq. "atlantic" then
+    tres@txJust = "CenterLeft"
+    tres@txFontHeightF = 0.011
+    mytext = gsn_add_text(wks,contours,"Alicia M. Bentley",-85.0,-4,tres)
+    mytext2 = gsn_add_text(wks,contours,"www.AliciaMBentley.com",-84,-6,tres)
+else if domain .eq. "europe" then
+    tres@txJust = "CenterLeft"
+    tres@txFontHeightF = 0.011
+    mytext = gsn_add_text(wks,contours,"Alicia M. Bentley",-45.0,23.2,tres)
+    mytext2 = gsn_add_text(wks,contours,"www.AliciaMBentley.com",-44.7,21.7,tres)
+end if
+end if
+end if
+end if 
+
+;********************************************
+
+overlay(plot,contours)
+;overlay(plot,other)
+overlay(plot,barbs)
+
+;********************************************
+
+draw(plot)
+frame(wks)
+
+system("convert /free2/abentley/realtime/"+name+"/"+name+"_"+imgcount+".png -trim +repage "+dir_out+name+"_"+imgcount+".gif")
+system ("'rm' /free2/abentley/realtime/"+name+"/"+name+"_*.png") 
+
+print("Image = "+imgcount+" created in: "+dir_out)
+
+;**********************************************************************************************************
+;**********************************************************************************************************
+;**********************************************************************************************************
+
+             imgcount = imgcount + 1
+          end do
+          end if
+
+          ; remove the grb2 file to save space
+          if(tim .le. edate) then
+             system("rm -f "+dir_grib+"gfs255_anl_"+str_time+".grb2.tar") ; now remove the tar file (only have to do this once)
+          end if
+    end do
+
+else
+    print("Just the analysis")
+    print("But I'll handle that later!")   ;maybe can always do the forecast and then just make it plot one time and quit
+end if
+
+system("rm -f "+dir_grib+"GFS_*_000")
+system("rm -f "+dir_grib+"*.grb2.tar")
+
+end do ; end domain
+
+print(" ")
+print("**************")
+print(" END SCRIPT ")
+print("**************")
+print(" ")
+
+end

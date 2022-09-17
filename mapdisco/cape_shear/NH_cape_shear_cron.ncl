@@ -1,0 +1,473 @@
+; ===========================================
+; Plotting GFS archive overnight to correct
+; ===========================================
+load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/gsn_code.ncl"
+load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/gsn_csm.ncl"
+load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/contributed.ncl"
+load "$NCARG_ROOT/lib/ncarg/nclscripts/contrib/ut_string.ncl"
+load "~/ncl/lib/tTick.ncl"
+load "~/ncl/lib/ut_string.ncl"
+load "~/ncl/lib/latlon.ncl"
+load "~/ncl/lib/shea_util.ncl"
+load "$NCARG_ROOT/lib/ncarg/nclscripts/contrib/calendar_decode2.ncl"
+; ===========================================
+
+begin
+
+print(" ")
+print("**************")
+print(" START SCRIPT ")
+print("**************")
+
+;move = "no"
+move = "yes"
+
+;toplot = "no"
+toplot = "yes"
+
+name = "cape_shear"
+
+
+
+
+;-------------------------------------------------------------------------------------------------
+;-------------------------------------------------------------------------------------------------
+;-------------------------------------------------------------------------------------------------
+
+if move .eq. "yes" then
+
+start_img = 2    ; first image to move
+end_img = 89	 ; last image to move
+
+; First list is all possible domain options
+folder = (/"NH","SH"/)    
+enddomain = dimsizes(folder)
+
+; First list is all possible variable options    
+variable = name    
+endvariable = dimsizes(variable)
+
+;*********************
+
+
+dir_out = "/lb11/abentley/www/realtime/images/"    ; change to the directory you want to put images in
+
+do x = 0,enddomain-1
+	domain = folder(x)
+	print("Moving GFS images to the previous time slot for ("+domain+") and ("+name+")")
+
+	do y = 0,endvariable-1
+	
+		image = variable(y)	
+		;system("mkdir "+dir_out+domain+"/")	
+		;system("mkdir "+dir_out+domain+"/"+image+"/")
+		
+			do number = start_img,end_img,1
+				minus_number = number - 1
+			
+				from = dir_out+domain+"/"+name+"/"+image+"_"+number+".png"
+				to   = dir_out+domain+"/"+name+"/"+image+"_"+minus_number+".png"
+
+				system("'cp' "+from+" "+to) 
+				print("Copied "+from+" to "+to)
+
+			end do     ; end number
+
+end do     ; end name
+end do     ; end domain
+
+end if ; if move .eq. "yes"
+
+
+;-----------------------------------------------------------------------------------------
+;-----------------------------------------------------------------------------------------
+;-----------------------------------------------------------------------------------------
+;-----------------------------------------------------------------------------------------
+
+if toplot .eq. "yes" then
+
+	print(" ")
+	timeUnits = "hours since 1800-01-01 00:00:00"
+
+	datestr = systemfunc("date")
+	print("datestr: "+datestr)
+
+	quote = inttochar(34) 
+	cyyyy = stringtoint(systemfunc("date "+quote+"+%Y"+quote))
+	cmm = stringtoint(systemfunc("date "+quote+"+%m"+quote))
+	cdd = stringtoint(systemfunc("date "+quote+"+%d"+quote))
+	chh = stringtoint(systemfunc("date "+quote+"+%H"+quote))
+	cdate = cd_inv_calendar(cyyyy,cmm,cdd,chh,00,00,timeUnits,0)
+
+print("chh: "+chh)
+
+	if (chh .ge. 4) .and. (chh .lt. 10) then
+    	sdate = cd_inv_calendar(cyyyy,cmm,cdd,00,00,00,timeUnits,0)
+    	hr = 00
+	else if (chh .ge. 10) .and. (chh .lt. 16) then
+    	sdate = cd_inv_calendar(cyyyy,cmm,cdd,06,00,00,timeUnits,0)
+    	hr = 06
+	else if (chh .ge. 16) .and. (chh .lt. 22) then
+    	sdate = cd_inv_calendar(cyyyy,cmm,cdd,12,00,00,timeUnits,0)
+    	hr = 12
+	else if (chh .ge. 22) .or. (chh .lt. 4) then
+		if (chh .lt. 5) then
+			cdd = cdd - 1
+		end if
+    	sdate = cd_inv_calendar(cyyyy,cmm,cdd,18,00,00,timeUnits,0)
+    	hr = 18
+	end if
+	end if
+	end if
+	end if
+
+;print("GFS Forecast: "+hr+"Z run")
+;sdate = cd_inv_calendar(2018,4,14,6,00,00,timeUnits,0)
+print("Initialized on sdate: "+ut_string(sdate,""))
+    
+imgcount = 57			;;; this starts the image count at 57 (analysis)
+
+;*****************************************************
+         
+; Set date strings
+str_time = ut_string(sdate,"%y%N%D")
+str_hr = ut_string(sdate,"%H")
+
+	print("Plotting from forecast grib files")
+	fhr  = (/0,6,12,18,24,30,36,42,48,54,60,66,72,78,84,90,96,102,108,114,120,126,132,138,144,150,156,162,168,174,180,186,192/)
+;	fhr  = (/0,6,12,24/)
+	nfhr = dimsizes(fhr)
+  
+             do f = 0,nfhr-1
+                 if (fhr(f).lt.10) then
+                      filefhr = "00"+fhr(f)
+                 else if ((fhr(f).lt.100).and.(fhr(f).gt.10)) then
+                      filefhr = "0"+fhr(f)
+                 else if (fhr(f).gt.100) then
+                      filefhr = fhr(f)
+                 end if 
+                 end if
+                 end if
+                 filename = "/nfs/cas2/unidata/GRIB/gfs0p5deg/GFS_"+str_time+"_"+str_hr+"_"+filefhr+".grb2"
+                 fhr_cur = fhr(f)
+
+
+;**********************************************************************************************************
+;**********************************************************************************************************
+;**********************************************************************************************************
+
+  a := addfile(filename,"r")
+  
+  lev = (/85000/)
+
+print("loading data")
+
+  ut := a->UGRD_P0_L100_GLL0({50000},::-1,:)
+  vt := a->VGRD_P0_L100_GLL0({50000},::-1,:)
+  ub := a->UGRD_P0_L100_GLL0({100000},::-1,:)
+  vb := a->VGRD_P0_L100_GLL0({100000},::-1,:)
+    ushear = ut - ub
+    vshear = vt - vb 
+    ushear = ushear * 1.94384449 
+    vshear = vshear * 1.94384449
+    copy_VarCoords(ut,ushear)
+    copy_VarCoords(vt,vshear)
+
+  g := a->HGT_P0_L100_GLL0({lev},::-1,:) 
+  g = g/10
+ 
+  t := a->TMP_P0_L100_GLL0({lev},::-1,:)
+  t = t - 273.15
+  copy_VarCoords(g,t)
+  
+  cape := a->CAPE_P0_L1_GLL0(::-1,:)
+
+do d=0,2
+	t=smth9(t,.5,.25,True)
+end do
+
+do d=0,1
+	g=smth9(g,.5,.25,True)
+end do
+
+  print("Successfully got data from files!")
+  
+;==============================================
+
+folder2 = (/"NH","SH"/)
+enddomain2 = dimsizes(folder2)
+
+do x = 0,enddomain2-1
+
+domain = folder2(x)
+
+print(" ")
+print("Plotting maps for: "+domain)	      	
+
+dir_plot = "/free/abentley/realtime/"+name+"/grib2/"	         
+dir_out = "/lb11/abentley/www/realtime/images/"+domain+"/"+name+"/"
+;;system("mkdir /lb11/abentley/www/realtime/images/"+domain+"/")
+;;system("mkdir /lb11/abentley/www/realtime/images/"+domain+"/"+name+"/")
+
+
+;==============================================
+; Create Shaded Map
+;==============================================
+
+wks_type = "png"
+
+wks_type@wkWidth = 1600
+wks_type@wkHeight = 1600
+
+wks = gsn_open_wks(wks_type,dir_plot+name+"_"+imgcount)
+gsn_define_colormap(wks,"BkBlAqGrYeOrReViWh200")
+;**********************************************
+res = True
+
+res@gsnFrame = False                                             ;DO NOT PLOT FIRST MAP
+res@gsnDraw = False
+
+res@mpDataBaseVersion = "MediumRes"                              ; Country Outlines
+res@mpDataSetName = "Earth..4"
+res@mpOutlineBoundarySets = "National"
+
+res@cnFillOn = True                                              ; Turn on color fill
+;res@cnFillMode = "RasterFill"
+res@cnFillMode = "AreaFill"
+res@cnRasterSmoothingOn = True
+res@cnLevelSelectionMode = "ManualLevels"
+res@cnLinesOn = False                               ; Turn off contour lines
+res@cnLevelSpacingF = 250
+res@cnMinLevelValF = 250
+res@cnMaxLevelValF = 6250
+;res@cnFillColors = (/-1,50,58,66,74,82,90,98,106,114,122,130,138,146,154,162,170,178,186,194,201/)
+res@cnFillColors = (/-1,50,58,66,74,80,85,90,98,106,114,119,125,130,138,146,154,162,170,178,183,186,191,195,198,0/)
+
+;**********************************************
+
+res@lbAutoManage = False                   ; Label Bar Information
+res@lbOrientation =  "vertical"
+res@pmLabelBarOrthogonalPosF = 0.168
+res@pmLabelBarParallelPosF = 0.5  
+res@pmLabelBarHeightF = 0.64
+res@pmLabelBarWidthF = 0.062
+res@lbLabelAutoStride = True
+res@lbLabelFontHeightF = 0.0124
+res@lbBoxLinesOn  = True                  
+res@lbTopMarginF = .3
+res@lbLabelPosition = "left"
+
+; *********************************************
+
+res@mpGeophysicalLineThicknessF = 3.0
+res@mpNationalLineThicknessF = 2.0
+res@mpUSStateLineThicknessF = 2.0
+res@mpOutlineSpecifiers = (/"Brazil:states","United States:states"/)
+
+res@mpGeophysicalLineColor = "grey29"
+res@mpNationalLineColor = "grey29"
+res@mpUSStateLineColor = "grey29"
+
+; *********************************************
+
+res@mpGridAndLimbOn = True
+res@mpGridLineDashPattern = 5
+res@mpGridLatSpacingF = 20.
+res@mpGridLonSpacingF = 20.
+res@mpGridLineThicknessF = 2
+res@mpGridLineColor = "grey40"
+;res@pmTickMarkDisplayMode = "Always"
+
+; *************************************************************
+
+
+if domain .eq. "NH"
+res@gsnPolar = "NH"
+res@mpCenterLonF = -90.
+res@mpMinLatF    = 10
+res@mpMaxLatF    = 90
+end if
+
+
+if domain .eq. "SH"
+res@gsnPolar = "SH"
+res@mpCenterLonF = -90.
+res@mpMinLatF    = -90
+res@mpMaxLatF    = -10
+end if
+
+; *************************************************************
+
+cnres = True
+
+cnres@gsnFrame = False                                        
+cnres@gsnDraw = False
+
+cnres@gsnLeftString = " "
+cnres@gsnRightString = " "
+
+cnres@cnFillMode = "AreaFill"
+cnres@cnInfoLabelOn = False                    ; Removes descriptive box in lower right corner
+cnres@cnFillOn = False
+cnres@cnLinesOn = True
+cnres@cnLabelMasking = True
+cnres@cnLineThicknessF = 3                    ; Changes thickness of contours
+cnres@cnLevelSelectionMode = "ManualLevels"
+cnres@cnLevelSpacingF = 3
+cnres@cnMinLevelValF = 90
+cnres@cnMaxLevelValF = 420  
+cnres@cnLineLabelAngleF = 0.0
+cnres@cnLineLabelInterval = 2
+cnres@cnLineLabelDensityF = 1.1
+;cnres@cnSmoothingOn = True
+;cnres@cnSmoothingDistanceF = 0.009
+cnres@cnLineLabelBackgroundColor = -1
+cnres@cnLineLabelFontHeightF = 0.008
+
+cnres@gsnLeftString = "@AliciaMBentley"
+cnres@gsnLeftStringOrthogonalPosF = -1.015
+cnres@gsnLeftStringFontHeightF = .01
+
+; *************************************************************
+
+tres = True
+
+tres@gsnFrame = False                                        
+tres@gsnDraw = False
+
+tres@cnFillMode = "AreaFill"
+tres@gsnLeftString = " "
+tres@gsnRightString = " "
+tres@cnInfoLabelOn = False                    ; Removes descriptive box in lower right corner
+tres@cnFillOn = False
+tres@cnLinesOn = True
+tres@cnLabelMasking = True
+tres@cnLineThicknessF = 3
+tres@cnLineColor = "red"
+tres@cnLineLabelFontColor = "red"
+tres@cnLevelSelectionMode = "ManualLevels"
+tres@cnLevelSpacingF = 6
+tres@cnMinLevelValF = -60
+tres@cnMaxLevelValF = 60
+tres@cnLineLabelsOn = True
+tres@cnLineLabelAngleF = 0.0
+tres@cnLineLabelInterval = 1
+tres@cnLineLabelDensityF = 1.0
+tres@cnLineLabelBackgroundColor = -1
+tres@cnLineLabelFontHeightF = 0.008
+tres@cnLineDashPattern = 5
+tres@gsnAddCyclic =  True
+
+; *************************************************************
+
+
+    bres = True
+
+    bres@gsnFrame = False                                        
+    bres@gsnDraw = False
+
+    bres@gsnLeftString = " "
+    bres@gsnRightString = " "
+
+    bres@vcGlyphStyle = "WindBarb"
+    bres@vcWindBarbColor = "grey22"
+    bres@vcWindBarbCalmCircleSizeF = 0
+    bres@vcWindBarbLineThicknessF = 3.0
+    bres@vcRefAnnoOn = False
+    bres@vcRefLengthF = 0.0242
+    bres@vcRefMagnitudeF = 10.0
+    bres@vcRefAnnoString2On = False
+    bres@vcRefAnnoOrthogonalPosF = -1.08
+    bres@vcMinDistanceF = 0.035
+    bres@vcWindBarbTickLengthF = 0.37
+    bres@vcWindBarbTickSpacingF = 0.130
+    bres@vcWindBarbTickAngleF = 55.0
+    bres@gsnFrame = False
+    bres@gsnAddCyclic =  True
+    
+bres@gsnRightString = "www.AliciaMBentley.com"
+bres@gsnRightStringParallelPosF = 0.2535
+bres@gsnRightStringOrthogonalPosF = -1.035
+bres@gsnRightStringFontHeightF = .01
+
+;**********************************************
+
+  curdate = sdate	
+  curdate = sdate + fhr_cur
+  curdate@units = "hours since 1800-01-01 00:00:00"
+
+	res@tiMainString = " "
+	res@tiMainJust = "CenterCenter"
+	res@tiMainPosition = "Center" 
+	res@tiMainOffsetYF = .02
+	res@tiXAxisFontHeightF = .015
+	
+	res@gsnRightString = " "
+	
+	res@gsnLeftStringFontColor = "black"
+	res@gsnLeftString = "850-hPa geo. height (black, dam), temp. (red, C), CAPE (shaded, J/kg), 1000-500-hPa shear (barbs, kt)"
+	res@gsnLeftStringOrthogonalPosF = .034
+	res@gsnLeftStringFontHeightF = .010
+	
+	bres@gsnLeftStringFontColor = "black"
+	bres@gsnLeftString = "Initialized: "+ut_string(sdate,"")+" | Forecast hour: "+fhr_cur+" | Valid: "+ut_string(curdate,"")
+	bres@gsnLeftStringOrthogonalPosF = .010
+	bres@gsnLeftStringFontHeightF = .0085
+
+
+; *************************************************************
+res@mpFillOn = True
+res@mpOutlineOn = True
+res@mpFillDrawOrder = "PreDraw"
+res@cnFillDrawOrder = "PreDraw"
+cnres@cnLineDrawOrder ="Draw"
+tres@cnLineDrawOrder ="Draw"
+res@mpOutlineDrawOrder = "Draw"
+res@mpGridAndLimbDrawOrder = "PostDraw"
+
+plot = gsn_csm_contour_map(wks, cape, res)          ; Plot filled contour map
+contours = gsn_csm_contour(wks, g, cnres)
+other = gsn_csm_contour(wks, t, tres)
+barbs = gsn_csm_vector(wks, ushear, vshear, bres)
+;plot = add_map_tickmarks(wks,plot,tmres)
+
+;********************************************
+
+overlay(plot,other)
+overlay(plot,contours)
+overlay(plot,barbs)
+
+;********************************************
+
+draw(plot)
+frame(wks)
+
+;*********************************************
+
+system("pngquant "+dir_plot+name+"_"+imgcount+".png")
+system("'mv' "+dir_plot+name+"_"+imgcount+"-fs8.png "+dir_plot+name+"_"+imgcount+".png") 
+system("convert "+dir_plot+name+"_"+imgcount+".png -trim +repage "+dir_out+name+"_"+imgcount+".png")
+system ("'rm' "+dir_plot+name+"_*.png")
+system ("'rm' "+dir_plot+name+"_*-fs8.png")
+
+
+print("Image = "+imgcount+" created in: "+dir_out)
+
+;**********************************************************************************************************
+;**********************************************************************************************************
+;**********************************************************************************************************
+
+end do     	; end domain
+
+imgcount = imgcount + 1
+end do		; end tim
+
+end if ; toplot .eq. "yes"
+
+print(" ")
+print("**************")
+print(" END SCRIPT ")
+print("**************")
+print(" ")
+
+end

@@ -1,0 +1,41 @@
+function add_filled_box(wks,map,lftlat,lftlon,rgtlat,rgtlon)
+local gnres, npts, i, lat_begend, lon_begend, dist
+begin
+  gnres             = True
+  gnres@gsFillColor = "white"
+  gnres@gsEdgesOn   = True
+
+  npts   =  5     ; Number of points along each box edge.
+                  ; You could make this different for each
+                  ; edge, if you want.  
+;
+; Define the coordinates for the start, end of the four sides
+; of each box. Put them in a big array so it's easier to
+; loop across the points later.
+;
+                         ; bottom            right
+                         ; top               left
+  lat_begend = (/ (/lftlat,lftlat/), (/lftlat,rgtlat/),  \
+                  (/rgtlat,rgtlat/), (/rgtlat,lftlat/)/)
+  lon_begend = (/ (/lftlon,rgtlon/), (/rgtlon,rgtlon/),  \
+                  (/rgtlon,lftlon/), (/lftlon,lftlon/)/)
+  
+;---Define array to hold box.
+  latbox = new(4*npts,float)
+  lonbox = new(4*npts,float)
+
+;---Loop across the four edges and calculate the points along each edge
+  do i=0,3
+    ibeg = i*npts
+    iend = ibeg+npts-1
+    dist = gc_latlon(lat_begend(i,0),lon_begend(i,0), \
+                     lat_begend(i,1),lon_begend(i,1),npts,2)
+    latbox(ibeg:iend) = dist@gclat
+    lonbox(ibeg:iend) = dist@gclon
+  end do
+
+;---Attach filled box to map and return
+  dum = gsn_add_polygon(wks, map, lonbox, latbox, gnres)
+
+  return(dum)
+end

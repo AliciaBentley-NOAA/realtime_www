@@ -1,0 +1,29 @@
+load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/contributed.ncl" 
+function theta_eqv(T:numeric, X:numeric, p0[1], p[*]:numeric) 
+; 
+; calculate equivalent potential temperature 
+; 
+; T : Temperature [K] (time,lev,lat,lon) 
+; X : mixing ratio of water vapor in air [kg/kg] (time,lev,lat,lon) 
+; p0 : reference pressure [ usually 1000 mb or 100000 Pa ] 
+; p ; pressure at each level [must be same units as p0 ] 
+local T_e, L_v, c_pd, R, Rcpd, dimT, dimX, P 
+begin 
+   L_v = 2400. ; latent heat of evaporation [approx 2400 kJ/kg at 25C] 
+   c_pd = 1004. ; specific heat at constant pressure for air [approx 1004 J/(kg-K)] 
+   R = 287. ; specific gas constant for air [J/(kg-K)] 
+   Rcpd = R/c_pd 
+   dimT = dimsizes(T) 
+   dimX = dimsizes(X) 
+   if (dimsizes(dimT) .ne. dimsizes(dimX)) then 
+       print("theta_eqv: rank of T .ne. rank of X") 
+       exit 
+   end if 
+   P = conform(T,p,-1) ; make p same shape/rank/size as T 
+   T_e = T + (L_v/c_pd)*X ; common approximation 
+   theta_e = T_e*(p0/P)^Rcpd 
+   theta_e_at_long_name = "equivalent potential temperature" 
+   theta_e_at_units = "K" 
+   copy_VarCoords(T, theta_e) ; assign coordinates 
+   return(theta_e) 
+end 
